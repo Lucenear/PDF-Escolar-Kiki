@@ -27,67 +27,58 @@
             android:paddingTop="4dp"
             android:paddingBottom="4dp">
 
-        <!-- Título y subtítulo en línea -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="match_parent"
+            <!-- Título y subtítulo en línea -->
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="Kiki PDF"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="@android:color/white"
-                android:fontFamily="sans-serif-medium"
-                android:maxLines="1" />
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center_vertical">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Tu visor de PDF simple y rápido"
-                android:textColor="#CCFFFFFF"
-                android:textSize="10sp"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Kiki PDF"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white"
+                    android:fontFamily="sans-serif-medium"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Tu visor de PDF simple y rápido"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="10sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+            </LinearLayout>
+
+            <!-- Botón de menú (solo visible cuando hay PDF abierto) -->
+            <ImageButton
+                android:id="@+id/btn_menu"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_more_vert"
+                android:contentDescription="Opciones"
+                app:tint="@android:color/white"
+                android:visibility="gone" />
+
+            <!-- Botón de tema (solo visible en home) -->
+            <ImageButton
+                android:id="@+id/btn_theme"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_night"
+                android:contentDescription="Cambiar tema"
+                app:tint="@android:color/white" />
 
         </LinearLayout>
-
-        <ImageButton
-            android:id="@+id/btn_download"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_download"
-            android:contentDescription="Descargar PDF"
-            app:tint="@android:color/white"
-            android:visibility="gone" />
-
-        <ImageButton
-            android:id="@+id/btn_share"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_share"
-            android:contentDescription="Compartir PDF"
-            app:tint="@android:color/white"
-            android:visibility="gone" />
-
-        <ImageButton
-            android:id="@+id/btn_theme"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_night"
-            android:contentDescription="Cambiar tema"
-            app:tint="@android:color/white" />
-
     </LinearLayout>
-
-</LinearLayout>
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -138,25 +129,25 @@
                             android:layout_weight="1"
                             android:orientation="vertical">
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="sans-serif-medium"
-                            android:gravity="center"
-                            android:text="Abrir PDF"
-                            android:textColor="@color/primary_dark"
-                            android:textSize="22sp"
-                            android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:gravity="center"
+                                android:text="Abrir PDF"
+                                android:textColor="@color/primary_dark"
+                                android:textSize="22sp"
+                                android:textStyle="bold" />
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center"
-                            android:lineSpacingExtra="4dp"
-                            android:paddingTop="8dp"
-                            android:text="Toca para seleccionar un archivo"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="15sp" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:lineSpacingExtra="4dp"
+                                android:paddingTop="8dp"
+                                android:text="Toca para seleccionar un archivo"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="15sp" />
 
                         </LinearLayout>
 

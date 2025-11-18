@@ -37,8 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recentFilesContainer: LinearLayout
     private lateinit var txtNoRecentFiles: TextView
     private lateinit var btnTheme: ImageButton
-    private lateinit var btnShare: ImageButton
-    private lateinit var btnDownload: ImageButton
+    private lateinit var btnMenu: ImageButton // Nuevo botón de menú
     private lateinit var btnClearCache: Button
     private lateinit var sharedPreferences: SharedPreferences
 
@@ -81,8 +80,7 @@ class MainActivity : AppCompatActivity() {
         setupMaterialIcons()
         setupHomeScreen()
         setupThemeButton()
-        setupShareButton()
-        setupDownloadButton()
+        setupMenuButton() // Configurar el nuevo botón de menú
         setupClearCacheButton()
         handleIntent(intent)
 
@@ -107,15 +105,48 @@ class MainActivity : AppCompatActivity() {
         recentFilesContainer = findViewById(R.id.recentFilesContainer)
         txtNoRecentFiles = findViewById(R.id.txtNoRecentFiles)
         btnTheme = findViewById(R.id.btn_theme)
-        btnShare = findViewById(R.id.btn_share)
-        btnDownload = findViewById(R.id.btn_download)
+        btnMenu = findViewById(R.id.btn_menu) // Inicializar el nuevo botón de menú
         btnClearCache = findViewById(R.id.btn_clear_cache)
+
+        // ELIMINAR estas líneas si existen:
+        // btnShare = findViewById(R.id.btn_share)
+        // btnDownload = findViewById(R.id.btn_download)
     }
 
     private fun setupMaterialIcons() {
         updateThemeIcon()
-        setupShareIcon()
-        setupDownloadIcon()
+        setupMenuIcon() // Configurar el icono del menú
+    }
+
+    private fun setupMenuIcon() {
+        btnMenu.setImageResource(R.drawable.ic_more_vert)
+        btnMenu.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
+    }
+
+    private fun setupMenuButton() {
+        btnMenu.setOnClickListener {
+            showPdfOptionsMenu()
+        }
+    }
+
+    private fun showPdfOptionsMenu() {
+        val popup = PopupMenu(this, btnMenu)
+        popup.menuInflater.inflate(R.menu.pdf_options_menu, popup.menu)
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.menu_share -> {
+                    sharePdf()
+                    true
+                }
+                R.id.menu_download -> {
+                    downloadPdf()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
     }
 
     private fun updateThemeIcon() {
@@ -134,28 +165,6 @@ class MainActivity : AppCompatActivity() {
 
         btnTheme.setImageResource(themeIconRes)
         btnTheme.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
-    }
-
-    private fun setupShareIcon() {
-        btnShare.setImageResource(R.drawable.ic_share)
-        btnShare.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
-    }
-
-    private fun setupDownloadIcon() {
-        btnDownload.setImageResource(R.drawable.ic_download)
-        btnDownload.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
-    }
-
-    private fun setupShareButton() {
-        btnShare.setOnClickListener {
-            sharePdf()
-        }
-    }
-
-    private fun setupDownloadButton() {
-        btnDownload.setOnClickListener {
-            downloadPdf()
-        }
     }
 
     private fun setupClearCacheButton() {
@@ -363,6 +372,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.cardOpenPdf).setOnClickListener {
             openFilePicker()
         }
+        setupMenuButton() // Agregar esta línea
         loadRecentFiles()
     }
 
@@ -529,18 +539,17 @@ class MainActivity : AppCompatActivity() {
     private fun showPdfView() {
         homeScreen.visibility = View.GONE
         pdfView.visibility = View.VISIBLE
-        btnShare.visibility = View.VISIBLE
-        btnDownload.visibility = View.VISIBLE
-        btnTheme.visibility = View.GONE
+        btnMenu.visibility = View.VISIBLE  // Mostrar menú
+        btnTheme.visibility = View.GONE    // Ocultar tema
     }
 
+    // Actualizar showHomeScreen()
     private fun showHomeScreen() {
         runOnUiThread {
             homeScreen.visibility = View.VISIBLE
             pdfView.visibility = View.GONE
-            btnShare.visibility = View.GONE
-            btnDownload.visibility = View.GONE
-            btnTheme.visibility = View.VISIBLE
+            btnMenu.visibility = View.GONE    // Ocultar menú
+            btnTheme.visibility = View.VISIBLE // Mostrar tema
             currentPdfUri = null
             currentPdfFile = null
             loadRecentFiles()
