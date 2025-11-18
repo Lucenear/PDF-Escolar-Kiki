@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.github.barteksc.pdfviewer.PDFView
 import org.json.JSONArray
 import org.json.JSONException
@@ -42,6 +43,7 @@ class MainActivity : AppCompatActivity() {
 
     private val PDF_REQUEST_CODE = 1001
     private var currentPdfUri: Uri? = null
+    private var currentPdfFile: File? = null
     private val RECENT_FILES_KEY = "recent_files"
     private val THEME_PREF_KEY = "app_theme"
     private val MAX_RECENT_FILES = 10
@@ -51,6 +53,12 @@ class MainActivity : AppCompatActivity() {
     private var pdfUriBeforeRecreate: Uri? = null
 
     private var backPressedTime: Long = 0
+
+    private val pdfCacheDir: File by lazy {
+        File(cacheDir, "pdf_cache").apply {
+            if (!exists()) mkdirs()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         sharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
@@ -73,7 +81,7 @@ class MainActivity : AppCompatActivity() {
         setupHomeScreen()
         setupThemeButton()
         setupShareButton()
-        setupDownloadButton() // Configurar el nuevo botón
+        setupDownloadButton()
         setupClearCacheButton()
         handleIntent(intent)
 
@@ -156,48 +164,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadPdf() {
-        currentPdfUri?.let { uri ->
-            try {
-                val fileName = getFileName(uri)
-                val inputStream = contentResolver.openInputStream(uri)
+        try {
+            val sourceFile = currentPdfFile ?: getCachedFileFromUri(currentPdfUri)
 
-                if (inputStream != null) {
-                    // Crear directorio de descargas si no existe
-                    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                    if (!downloadsDir.exists()) {
-                        downloadsDir.mkdirs()
-                    }
+            if (sourceFile != null && sourceFile.exists()) {
+                val fileName = getFileName(currentPdfUri)
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
 
-                    // Crear archivo de destino
-                    val outputFile = File(downloadsDir, fileName)
-                    val outputStream = FileOutputStream(outputFile)
-
-                    // Copiar el archivo
-                    inputStream.copyTo(outputStream)
-
-                    // Cerrar streams
-                    inputStream.close()
-                    outputStream.close()
-
-                    // Mostrar mensaje de éxito
-                    Toast.makeText(this, "PDF guardado en: ${outputFile.absolutePath}", Toast.LENGTH_LONG).show()
-
-                    // Opcional: escanear el archivo para que aparezca en la galería
-                    val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-                    mediaScanIntent.data = Uri.fromFile(outputFile)
-                    sendBroadcast(mediaScanIntent)
-
-                } else {
-                    Toast.makeText(this, "Error: No se pudo leer el archivo", Toast.LENGTH_SHORT).show()
+                if (!downloadsDir.exists()) {
+                    downloadsDir.mkdirs()
                 }
 
-            } catch (e: SecurityException) {
-                Toast.makeText(this, "Error: Permisos insuficientes para guardar el archivo", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Error al descargar: ${e.message}", Toast.LENGTH_SHORT).show()
+                val outputFile = File(downloadsDir, fileName)
+
+                // Copiar el archivo
+                sourceFile.copyTo(outputFile, overwrite = true)
+
+                // Notificar al sistema
+                val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+                mediaScanIntent.data = Uri.fromFile(outputFile)
+                sendBroadcast(mediaScanIntent)
+
+                Toast.makeText(this, "PDF guardado en: Descargas/$fileName", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Error: No se pudo acceder al archivo", Toast.LENGTH_SHORT).show()
             }
-        } ?: run {
-            Toast.makeText(this, "No hay PDF abierto para descargar", Toast.LENGTH_SHORT).show()
+        } catch (e: SecurityException) {
+            Toast.makeText(this, "Error: Permisos insuficientes", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error al descargar: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -214,10 +209,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearCacheAndRecentFiles() {
         try {
-            val cacheDir = cacheDir
             var deletedFiles = 0
             var totalSize = 0L
 
+            // Limpiar directorio de caché de PDFs
+            if (pdfCacheDir.exists() && pdfCacheDir.isDirectory) {
+                pdfCacheDir.listFiles()?.forEach { file ->
+                    totalSize += file.length()
+                    if (file.delete()) {
+                        deletedFiles++
+                    }
+                }
+            }
+
+            // Limpiar archivos temporales antiguos
+            val cacheDir = cacheDir
             if (cacheDir.exists() && cacheDir.isDirectory) {
                 cacheDir.listFiles()?.forEach { file ->
                     if (file.name.startsWith("pdf_cache_") && file.extension == "pdf") {
@@ -248,9 +254,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun cleanOldCache() {
         try {
-            val cacheDir = cacheDir
             val now = System.currentTimeMillis()
 
+            // Limpiar directorio de caché de PDFs
+            if (pdfCacheDir.exists() && pdfCacheDir.isDirectory) {
+                pdfCacheDir.listFiles()?.forEach { file ->
+                    if (now - file.lastModified() > CACHE_CLEANUP_THRESHOLD) {
+                        file.delete()
+                    }
+                }
+            }
+
+            // Limpiar archivos temporales antiguos
+            val cacheDir = cacheDir
             if (cacheDir.exists() && cacheDir.isDirectory) {
                 cacheDir.listFiles()?.forEach { file ->
                     if (file.name.startsWith("pdf_cache_") && file.extension == "pdf") {
@@ -261,32 +277,62 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
+            // Ignorar errores en limpieza automática
         }
     }
 
     private fun sharePdf() {
-        currentPdfUri?.let { uri ->
-            try {
+        try {
+            val fileToShare = currentPdfFile ?: getCachedFileFromUri(currentPdfUri)
+
+            if (fileToShare != null && fileToShare.exists()) {
+                // Usar FileProvider para crear una URI segura
+                val contentUri = FileProvider.getUriForFile(
+                    this,
+                    "${packageName}.fileprovider",
+                    fileToShare
+                )
+
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "application/pdf"
-                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_STREAM, contentUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    putExtra(Intent.EXTRA_SUBJECT, "Compartiendo PDF: ${getFileName(uri)}")
+                    putExtra(Intent.EXTRA_SUBJECT, "Compartiendo PDF: ${getFileName(currentPdfUri)}")
                     putExtra(Intent.EXTRA_TEXT, "Te comparto este archivo PDF")
                 }
 
+                // Conceder permisos temporales a las apps que pueden recibir este intent
                 val chooserIntent = Intent.createChooser(shareIntent, "Compartir PDF via")
-
-                if (shareIntent.resolveActivity(packageManager) != null) {
-                    startActivity(chooserIntent)
-                } else {
-                    Toast.makeText(this, "No hay aplicaciones disponibles para compartir", Toast.LENGTH_SHORT).show()
+                val resInfoList = packageManager.queryIntentActivities(chooserIntent, 0)
+                for (resolveInfo in resInfoList) {
+                    val packageName = resolveInfo.activityInfo.packageName
+                    grantUriPermission(packageName, contentUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-            } catch (e: Exception) {
-                Toast.makeText(this, "Error al compartir el archivo", Toast.LENGTH_SHORT).show()
+
+                startActivity(chooserIntent)
+            } else {
+                Toast.makeText(this, "No se pudo acceder al archivo para compartir", Toast.LENGTH_SHORT).show()
             }
-        } ?: run {
-            Toast.makeText(this, "No hay PDF abierto para compartir", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error al compartir: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // NUEVO MÉTODO: Obtener archivo en caché desde URI
+    private fun getCachedFileFromUri(uri: Uri?): File? {
+        if (uri == null) return null
+
+        return try {
+            // Si ya es un archivo file://, devolverlo directamente
+            if (uri.scheme == "file") {
+                File(uri.path!!)
+            } else {
+                // Buscar en la caché por nombre de archivo
+                val fileName = getFileName(uri)
+                File(pdfCacheDir, fileName)
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -487,6 +533,7 @@ class MainActivity : AppCompatActivity() {
             btnDownload.visibility = View.GONE // Ocultar botón de descarga
             btnTheme.visibility = View.VISIBLE
             currentPdfUri = null
+            currentPdfFile = null // Limpiar referencia al archivo
             loadRecentFiles()
         }
     }
@@ -528,43 +575,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun openPdfFromUri(uri: Uri) {
         try {
-            if (uri.toString().contains("whatsapp")) {
-                val cachedUri = copyToCache(uri)
-                val fileName = getFileName(uri)
-                loadPdfFromUri(cachedUri)
-                showPdfView()
-                addToRecentFiles(cachedUri, fileName)
-                return
-            }
+            // Siempre copiar a caché para tener control del archivo
+            val cachedFile = copyToCache(uri)
+            currentPdfFile = cachedFile
+            currentPdfUri = Uri.fromFile(cachedFile)
 
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (e: SecurityException) {
-            }
-
-            loadPdfFromUri(uri)
+            loadPdfFromUri(currentPdfUri!!)
             showPdfView()
-            addToRecentFiles(uri)
+            addToRecentFiles(currentPdfUri!!, getFileName(uri))
 
-        } catch (e: SecurityException) {
-            try {
-                val cachedUri = copyToCache(uri)
-                val fileName = getFileName(uri)
-                loadPdfFromUri(cachedUri)
-                showPdfView()
-                addToRecentFiles(cachedUri, fileName)
-            } catch (e2: Exception) {
-                showPdfErrorDialog("No se pudo abrir el archivo: Error de permisos")
-            }
         } catch (e: Exception) {
             showPdfErrorDialog("No se pudo abrir el archivo: ${e.message ?: "Error desconocido"}")
         }
     }
 
-    private fun copyToCache(uri: Uri): Uri {
+    private fun copyToCache(uri: Uri): File {
         var inputStream: InputStream? = null
         var outputStream: FileOutputStream? = null
 
@@ -574,10 +599,17 @@ class MainActivity : AppCompatActivity() {
                 throw Exception("No se pudo abrir el stream del archivo")
             }
 
-            val tempFile = File.createTempFile("pdf_cache_${System.currentTimeMillis()}", ".pdf", cacheDir)
-            outputStream = FileOutputStream(tempFile)
+            val fileName = getFileName(uri)
+            val outputFile = File(pdfCacheDir, fileName)
+
+            // Si el archivo ya existe en caché, usarlo
+            if (outputFile.exists()) {
+                return outputFile
+            }
+
+            outputStream = FileOutputStream(outputFile)
             inputStream.copyTo(outputStream)
-            return Uri.fromFile(tempFile)
+            return outputFile
 
         } catch (e: Exception) {
             throw e
@@ -611,28 +643,47 @@ class MainActivity : AppCompatActivity() {
         saveRecentFiles(recentFiles)
     }
 
-    private fun getFileName(uri: Uri): String {
+    private fun getFileName(uri: Uri?): String {
+        if (uri == null) return "documento.pdf"
+
         var result = "documento.pdf"
-        var cursor: Cursor? = null
-        try {
-            cursor = contentResolver.query(uri, null, null, null, null)
-            cursor?.let {
-                if (it.moveToFirst()) {
-                    val displayNameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (displayNameIndex >= 0) {
-                        result = it.getString(displayNameIndex) ?: "documento.pdf"
+
+        // Si es un archivo file://, obtener el nombre directamente
+        if (uri.scheme == "file") {
+            val file = File(uri.path!!)
+            result = file.name
+        } else {
+            // Para content URI, usar el método original
+            var cursor: Cursor? = null
+            try {
+                cursor = contentResolver.query(uri, null, null, null, null)
+                cursor?.let {
+                    if (it.moveToFirst()) {
+                        val displayNameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (displayNameIndex >= 0) {
+                            result = it.getString(displayNameIndex) ?: "documento.pdf"
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                result = uri.lastPathSegment ?: "documento.pdf"
+            } finally {
+                cursor?.close()
             }
-        } catch (e: Exception) {
-            result = uri.lastPathSegment ?: "documento.pdf"
-        } finally {
-            cursor?.close()
         }
 
-        if (result.length > 30) {
-            result = result.take(27) + "..."
+        // Asegurar que tenga extensión .pdf
+        if (!result.endsWith(".pdf", ignoreCase = true)) {
+            result += ".pdf"
         }
+
+        // Limitar longitud para mostrar
+        if (result.length > 30) {
+            val nameWithoutExt = result.substringBeforeLast(".")
+            val extension = result.substringAfterLast(".")
+            result = nameWithoutExt.take(27) + "...$extension"
+        }
+
         return result
     }
 
