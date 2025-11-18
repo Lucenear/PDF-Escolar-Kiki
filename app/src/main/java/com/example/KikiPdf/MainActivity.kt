@@ -12,6 +12,7 @@ import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -399,10 +400,10 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 0, 0, 8)
+                setMargins(0, 0, 0, 12)
             }
-            radius = 10f
-            cardElevation = 1.5f
+            radius = 16f
+            cardElevation = 4f
             setCardBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.card_light))
         }
 
@@ -412,11 +413,24 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
             orientation = LinearLayout.HORIZONTAL
-            setPadding(24, 0, 24, 28)
+            setPadding(24, 16, 16, 16)
             background = ContextCompat.getDrawable(this@MainActivity, android.R.drawable.menuitem_background)
             isClickable = true
             isFocusable = true
             minimumHeight = 72
+        }
+
+        // Icono de PDF
+        val iconView = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                48,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            setImageResource(R.drawable.ic_pdf_main)
+            setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.primary_color))
+            setPadding(0, 0, 16, 0)
         }
 
         val textView = TextView(this).apply {
@@ -427,26 +441,28 @@ class MainActivity : AppCompatActivity() {
                 weight = 1f
             }
             text = fileName
-            textSize = 14f
+            textSize = 16f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
             maxLines = 1
             gravity = android.view.Gravity.CENTER_VERTICAL
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
         }
 
-        val iconView = TextView(this).apply {
+        val menuIcon = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
             text = "⋮"
-            textSize = 28f
+            textSize = 20f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
-            setPadding(16, 0, 16, 0)
+            setPadding(16, 0, 0, 0)
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
-        linearLayout.addView(textView)
         linearLayout.addView(iconView)
+        linearLayout.addView(textView)
+        linearLayout.addView(menuIcon)
         cardView.addView(linearLayout)
 
         linearLayout.setOnClickListener {
@@ -458,7 +474,7 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        iconView.setOnClickListener {
+        menuIcon.setOnClickListener {
             showFileContextMenu(linearLayout, uri, fileName)
         }
 

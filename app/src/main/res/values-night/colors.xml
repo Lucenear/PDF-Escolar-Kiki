@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary_color">#818CF8</color>
-    <color name="primary_dark">#6366F1</color>
-    <color name="accent_color">#F472B6</color>
+    <!-- Colores personalizados - Actualizados a paleta celeste-azul marino -->
+    <color name="primary_color">#FF4FC3F7</color>  <!-- Celeste claro para modo oscuro -->
+    <color name="primary_dark">#FF29B6F6</color>   <!-- Celeste principal para modo oscuro -->
+    <color name="accent_color">#FF81D4FA</color>   <!-- Celeste más claro para acentos -->
     <color name="background_light">#0F172A</color>
     <color name="card_light">#1E293B</color>
     <color name="text_primary">#F1F5F9</color>
     <color name="text_secondary">#94A3B8</color>
+
+    <!-- Nuevos colores para gradientes -->
+    <color name="gradient_start">#FF0288D1</color>
+    <color name="gradient_end">#FF01579B</color>
+
+    <!-- Alias para compatibilidad -->
+    <color name="primary">@color/primary_color</color>
+    <color name="primary_light">@color/accent_color</color>
 </resources>
