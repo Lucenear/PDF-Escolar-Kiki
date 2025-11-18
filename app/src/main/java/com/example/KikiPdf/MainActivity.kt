@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Button
@@ -35,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtNoRecentFiles: TextView
     private lateinit var btnTheme: ImageButton
     private lateinit var btnShare: ImageButton
+    private lateinit var btnDownload: ImageButton // Nuevo botón
     private lateinit var btnClearCache: Button
     private lateinit var sharedPreferences: SharedPreferences
 
@@ -71,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         setupHomeScreen()
         setupThemeButton()
         setupShareButton()
+        setupDownloadButton() // Configurar el nuevo botón
         setupClearCacheButton()
         handleIntent(intent)
 
@@ -96,12 +99,14 @@ class MainActivity : AppCompatActivity() {
         txtNoRecentFiles = findViewById(R.id.txtNoRecentFiles)
         btnTheme = findViewById(R.id.btn_theme)
         btnShare = findViewById(R.id.btn_share)
+        btnDownload = findViewById(R.id.btn_download) // Inicializar el nuevo botón
         btnClearCache = findViewById(R.id.btn_clear_cache)
     }
 
     private fun setupMaterialIcons() {
         updateThemeIcon()
         setupShareIcon()
+        setupDownloadIcon() // Configurar icono de descarga
     }
 
     private fun updateThemeIcon() {
@@ -127,15 +132,72 @@ class MainActivity : AppCompatActivity() {
         btnShare.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
     }
 
+    private fun setupDownloadIcon() {
+        btnDownload.setImageResource(R.drawable.ic_download)
+        btnDownload.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
+    }
+
     private fun setupShareButton() {
         btnShare.setOnClickListener {
             sharePdf()
         }
     }
 
+    private fun setupDownloadButton() {
+        btnDownload.setOnClickListener {
+            downloadPdf()
+        }
+    }
+
     private fun setupClearCacheButton() {
         btnClearCache.setOnClickListener {
             showClearCacheConfirmation()
+        }
+    }
+
+    private fun downloadPdf() {
+        currentPdfUri?.let { uri ->
+            try {
+                val fileName = getFileName(uri)
+                val inputStream = contentResolver.openInputStream(uri)
+
+                if (inputStream != null) {
+                    // Crear directorio de descargas si no existe
+                    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    if (!downloadsDir.exists()) {
+                        downloadsDir.mkdirs()
+                    }
+
+                    // Crear archivo de destino
+                    val outputFile = File(downloadsDir, fileName)
+                    val outputStream = FileOutputStream(outputFile)
+
+                    // Copiar el archivo
+                    inputStream.copyTo(outputStream)
+
+                    // Cerrar streams
+                    inputStream.close()
+                    outputStream.close()
+
+                    // Mostrar mensaje de éxito
+                    Toast.makeText(this, "PDF guardado en: ${outputFile.absolutePath}", Toast.LENGTH_LONG).show()
+
+                    // Opcional: escanear el archivo para que aparezca en la galería
+                    val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+                    mediaScanIntent.data = Uri.fromFile(outputFile)
+                    sendBroadcast(mediaScanIntent)
+
+                } else {
+                    Toast.makeText(this, "Error: No se pudo leer el archivo", Toast.LENGTH_SHORT).show()
+                }
+
+            } catch (e: SecurityException) {
+                Toast.makeText(this, "Error: Permisos insuficientes para guardar el archivo", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error al descargar: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } ?: run {
+            Toast.makeText(this, "No hay PDF abierto para descargar", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -413,6 +475,7 @@ class MainActivity : AppCompatActivity() {
         homeScreen.visibility = View.GONE
         pdfView.visibility = View.VISIBLE
         btnShare.visibility = View.VISIBLE
+        btnDownload.visibility = View.VISIBLE // Mostrar botón de descarga
         btnTheme.visibility = View.GONE
     }
 
@@ -421,6 +484,7 @@ class MainActivity : AppCompatActivity() {
             homeScreen.visibility = View.VISIBLE
             pdfView.visibility = View.GONE
             btnShare.visibility = View.GONE
+            btnDownload.visibility = View.GONE // Ocultar botón de descarga
             btnTheme.visibility = View.VISIBLE
             currentPdfUri = null
             loadRecentFiles()
