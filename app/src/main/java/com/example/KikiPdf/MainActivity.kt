@@ -337,6 +337,19 @@ class MainActivity : AppCompatActivity() {
     private fun applyTheme() {
         val theme = sharedPreferences.getInt(THEME_PREF_KEY, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         AppCompatDelegate.setDefaultNightMode(theme)
+
+        // Configurar la barra de estado según el tema
+        if (theme == AppCompatDelegate.MODE_NIGHT_YES) {
+            // Tema oscuro: barra de estado oscura con texto claro
+            window.statusBarColor = ContextCompat.getColor(this, R.color.primary_dark)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and
+                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        } else {
+            // Tema claro: barra de estado clara con texto oscuro
+            window.statusBarColor = ContextCompat.getColor(this, R.color.background_light)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
     }
 
     private fun setupThemeButton() {
