@@ -8,7 +8,6 @@
     android:background="@color/background_light"
     android:fitsSystemWindows="true">
 
-    <!-- Header compacto con gradiente -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -16,7 +15,6 @@
         android:background="@drawable/gradient_background"
         android:elevation="4dp">
 
-        <!-- Barra superior compacta - Título y botones en una línea -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="48dp"
@@ -27,7 +25,6 @@
             android:paddingTop="4dp"
             android:paddingBottom="4dp">
 
-            <!-- Título y subtítulo en línea -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -56,7 +53,6 @@
 
             </LinearLayout>
 
-            <!-- Botón de menú (solo visible cuando hay PDF abierto) -->
             <ImageButton
                 android:id="@+id/btn_menu"
                 android:layout_width="40dp"
@@ -66,16 +62,6 @@
                 android:contentDescription="Opciones"
                 app:tint="@android:color/white"
                 android:visibility="gone" />
-
-            <!-- Botón de tema (solo visible en home) -->
-            <ImageButton
-                android:id="@+id/btn_theme"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_night"
-                android:contentDescription="Cambiar tema"
-                app:tint="@android:color/white" />
 
         </LinearLayout>
     </LinearLayout>

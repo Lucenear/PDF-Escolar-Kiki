@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
 import android.database.Cursor
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -12,11 +13,12 @@ import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.cardview.widget.CardView
@@ -36,16 +38,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var homeScreen: View
     private lateinit var recentFilesContainer: LinearLayout
     private lateinit var txtNoRecentFiles: TextView
-    private lateinit var btnTheme: ImageButton
-    private lateinit var btnMenu: ImageButton // Nuevo botón de menú
+    private lateinit var btnMenu: ImageButton
     private lateinit var btnClearCache: Button
     private lateinit var sharedPreferences: SharedPreferences
 
-    private val PDF_REQUEST_CODE = 1001
     private var currentPdfUri: Uri? = null
     private var currentPdfFile: File? = null
     private val RECENT_FILES_KEY = "recent_files"
-    private val THEME_PREF_KEY = "app_theme"
     private val MAX_RECENT_FILES = 10
     private val CACHE_CLEANUP_THRESHOLD = TimeUnit.DAYS.toMillis(1)
 
@@ -60,9 +59,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                openPdfFromUri(uri)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         sharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
-        applyTheme()
+
+        applySystemTheme()
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -79,9 +88,9 @@ class MainActivity : AppCompatActivity() {
         initViews()
         setupMaterialIcons()
         setupHomeScreen()
-        setupThemeButton()
-        setupMenuButton() // Configurar el nuevo botón de menú
+        setupMenuButton()
         setupClearCacheButton()
+        setupBackPressedHandler()
         handleIntent(intent)
 
         if (wasViewingPdf && pdfUriBeforeRecreate != null) {
@@ -104,18 +113,12 @@ class MainActivity : AppCompatActivity() {
         homeScreen = findViewById(R.id.homeScreen)
         recentFilesContainer = findViewById(R.id.recentFilesContainer)
         txtNoRecentFiles = findViewById(R.id.txtNoRecentFiles)
-        btnTheme = findViewById(R.id.btn_theme)
-        btnMenu = findViewById(R.id.btn_menu) // Inicializar el nuevo botón de menú
+        btnMenu = findViewById(R.id.btn_menu)
         btnClearCache = findViewById(R.id.btn_clear_cache)
-
-        // ELIMINAR estas líneas si existen:
-        // btnShare = findViewById(R.id.btn_share)
-        // btnDownload = findViewById(R.id.btn_download)
     }
 
     private fun setupMaterialIcons() {
-        updateThemeIcon()
-        setupMenuIcon() // Configurar el icono del menú
+        setupMenuIcon()
     }
 
     private fun setupMenuIcon() {
@@ -149,24 +152,6 @@ class MainActivity : AppCompatActivity() {
         popup.show()
     }
 
-    private fun updateThemeIcon() {
-        val currentTheme = sharedPreferences.getInt(THEME_PREF_KEY, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
-        val isDarkTheme = when (currentTheme) {
-            AppCompatDelegate.MODE_NIGHT_YES -> true
-            AppCompatDelegate.MODE_NIGHT_NO -> false
-            else -> resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
-        }
-
-        val themeIconRes = if (isDarkTheme) {
-            R.drawable.ic_day
-        } else {
-            R.drawable.ic_night
-        }
-
-        btnTheme.setImageResource(themeIconRes)
-        btnTheme.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
-    }
-
     private fun setupClearCacheButton() {
         btnClearCache.setOnClickListener {
             showClearCacheConfirmation()
@@ -189,9 +174,12 @@ class MainActivity : AppCompatActivity() {
 
                 sourceFile.copyTo(outputFile, overwrite = true)
 
-                val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-                mediaScanIntent.data = Uri.fromFile(outputFile)
-                sendBroadcast(mediaScanIntent)
+                MediaScannerConnection.scanFile(
+                    this,
+                    arrayOf(outputFile.absolutePath),
+                    arrayOf("application/pdf"),
+                    null
+                )
 
                 Toast.makeText(this, "PDF guardado en: Descargas/$fileName", Toast.LENGTH_LONG).show()
             } else {
@@ -334,58 +322,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyTheme() {
-        val theme = sharedPreferences.getInt(THEME_PREF_KEY, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
-        AppCompatDelegate.setDefaultNightMode(theme)
-
-        // Configurar la barra de estado según el tema
-        if (theme == AppCompatDelegate.MODE_NIGHT_YES) {
-            // Tema oscuro: barra de estado oscura con texto claro
-            window.statusBarColor = ContextCompat.getColor(this, R.color.primary_dark)
-            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and
-                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
-        } else {
-            // Tema claro: barra de estado clara con texto oscuro
-            window.statusBarColor = ContextCompat.getColor(this, R.color.background_light)
-            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
-                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-        }
-    }
-
-    private fun setupThemeButton() {
-        updateThemeIcon()
-        btnTheme.setOnClickListener {
-            toggleTheme()
-        }
-    }
-
-    private fun toggleTheme() {
-        val wasInPdfView = pdfView.visibility == View.VISIBLE
-        val currentUri = currentPdfUri
-
-        val currentTheme = sharedPreferences.getInt(THEME_PREF_KEY, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
-        val newTheme = when (currentTheme) {
-            AppCompatDelegate.MODE_NIGHT_NO -> AppCompatDelegate.MODE_NIGHT_YES
-            AppCompatDelegate.MODE_NIGHT_YES -> AppCompatDelegate.MODE_NIGHT_NO
-            else -> AppCompatDelegate.MODE_NIGHT_YES
-        }
-
-        sharedPreferences.edit().putInt(THEME_PREF_KEY, newTheme).apply()
-        AppCompatDelegate.setDefaultNightMode(newTheme)
-
-        if (wasInPdfView && currentUri != null) {
-            wasViewingPdf = true
-            pdfUriBeforeRecreate = currentUri
-        }
-
-        recreate()
+    private fun applySystemTheme() {
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
     }
 
     private fun setupHomeScreen() {
         findViewById<View>(R.id.cardOpenPdf).setOnClickListener {
             openFilePicker()
         }
-        setupMenuButton() // Agregar esta línea
+        setupMenuButton()
         loadRecentFiles()
     }
 
@@ -552,17 +497,14 @@ class MainActivity : AppCompatActivity() {
     private fun showPdfView() {
         homeScreen.visibility = View.GONE
         pdfView.visibility = View.VISIBLE
-        btnMenu.visibility = View.VISIBLE  // Mostrar menú
-        btnTheme.visibility = View.GONE    // Ocultar tema
+        btnMenu.visibility = View.VISIBLE
     }
 
-    // Actualizar showHomeScreen()
     private fun showHomeScreen() {
         runOnUiThread {
             homeScreen.visibility = View.VISIBLE
             pdfView.visibility = View.GONE
-            btnMenu.visibility = View.GONE    // Ocultar menú
-            btnTheme.visibility = View.VISIBLE // Mostrar tema
+            btnMenu.visibility = View.GONE
             currentPdfUri = null
             currentPdfFile = null
             loadRecentFiles()
@@ -601,7 +543,7 @@ class MainActivity : AppCompatActivity() {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/pdf"
         }
-        startActivityForResult(intent, PDF_REQUEST_CODE)
+        filePickerLauncher.launch(intent)
     }
 
     private fun openPdfFromUri(uri: Uri) {
@@ -741,16 +683,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == PDF_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            data?.data?.let { uri ->
-                openPdfFromUri(uri)
-            }
-        }
-    }
-
     private fun loadPdfFromUri(uri: Uri) {
         try {
             currentPdfUri = uri
@@ -767,18 +699,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onBackPressed() {
-        if (pdfView.visibility == View.VISIBLE) {
-            showHomeScreen()
-        } else {
-            if (backPressedTime + 2000 > System.currentTimeMillis()) {
-                super.onBackPressed()
-                finish()
-            } else {
-                Toast.makeText(this, "Presiona de nuevo para salir", Toast.LENGTH_SHORT).show()
+    private fun setupBackPressedHandler() {
+        val onBackPressedCallback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (pdfView.visibility == View.VISIBLE) {
+                    showHomeScreen()
+                } else {
+                    if (backPressedTime + 2000 > System.currentTimeMillis()) {
+                        finish()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Presiona de nuevo para salir", Toast.LENGTH_SHORT).show()
+                        backPressedTime = System.currentTimeMillis()
+                    }
+                }
             }
-            backPressedTime = System.currentTimeMillis()
         }
+        onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
     }
 
     override fun onDestroy() {
