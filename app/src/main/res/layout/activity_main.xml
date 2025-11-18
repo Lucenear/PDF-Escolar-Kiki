@@ -219,7 +219,7 @@
                     android:padding="48dp"
                     android:text="No hay archivos recientes\nToca 'Abrir PDF' para comenzar"
                     android:textColor="@color/text_secondary"
-                    android:textSize="14sp"
+                    android:textSize="18sp"
                     android:lineSpacingExtra="4dp"
                     android:visibility="gone" />
 
