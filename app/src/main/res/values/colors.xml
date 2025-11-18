@@ -8,20 +8,17 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-    <!-- Colores personalizados - Actualizados a paleta celeste-azul marino -->
-    <color name="primary_color">#FF29B6F6</color>  <!-- Celeste principal -->
-    <color name="primary_dark">#FF0288D1</color>   <!-- Azul marino -->
-    <color name="accent_color">#FF4FC3F7</color>   <!-- Celeste claro -->
+    <color name="primary_color">#FF29B6F6</color>
+    <color name="primary_dark">#FF0288D1</color>
+    <color name="accent_color">#FF4FC3F7</color>
     <color name="background_light">#F8FAFC</color>
     <color name="card_light">#FFFFFF</color>
     <color name="text_primary">#1E293B</color>
     <color name="text_secondary">#64748B</color>
 
-    <!-- Nuevos colores para gradientes - Usando nombres existentes -->
     <color name="gradient_start">#FF4FC3F7</color>
     <color name="gradient_end">#FF0288D1</color>
 
-    <!-- Alias para compatibilidad -->
     <color name="primary">@color/primary_color</color>
     <color name="primary_light">@color/accent_color</color>
 </resources>

@@ -8,7 +8,6 @@
     android:background="@color/background_light"
     android:fitsSystemWindows="true">
 
-    <!-- Header con gradiente -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -16,7 +15,6 @@
         android:background="@drawable/gradient_background"
         android:elevation="4dp">
 
-        <!-- Barra superior -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="56dp"
@@ -66,7 +64,6 @@
 
         </LinearLayout>
 
-        <!-- Subtítulo -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -79,13 +76,11 @@
 
     </LinearLayout>
 
-    <!-- Contenido principal -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <!-- Pantalla de inicio -->
         <ScrollView
             android:id="@+id/homeScreen"
             android:layout_width="match_parent"
@@ -99,7 +94,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- Tarjeta principal de Abrir PDF -->
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -157,14 +151,12 @@
 
                 </androidx.cardview.widget.CardView>
 
-                <!-- Sección de archivos recientes - VERSIÓN CORREGIDA -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
                     android:orientation="vertical">
 
-                    <!-- Fila del título y botón -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -207,14 +199,12 @@
 
                     </LinearLayout>
 
-                    <!-- Espacio entre título y lista -->
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="8dp" />
 
                 </LinearLayout>
 
-                <!-- Lista de archivos recientes -->
                 <LinearLayout
                     android:id="@+id/recentFilesContainer"
                     android:layout_width="match_parent"
@@ -237,7 +227,6 @@
 
         </ScrollView>
 
-        <!-- Visor PDF -->
         <com.github.barteksc.pdfviewer.PDFView
             android:id="@+id/pdfView"
             android:layout_width="match_parent"

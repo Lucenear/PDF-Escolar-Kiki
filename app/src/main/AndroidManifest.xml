@@ -26,7 +26,6 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- Intent filter para abrir PDFs desde otras apps -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -34,7 +33,6 @@
                 <data android:mimeType="application/pdf"/>
             </intent-filter>
 
-            <!-- Intent filter para URLs que terminen en .pdf -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
