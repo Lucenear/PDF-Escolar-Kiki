@@ -390,8 +390,8 @@ class MainActivity : AppCompatActivity() {
             ).apply {
                 setMargins(0, 0, 0, 12)
             }
-            radius = 16f
-            cardElevation = 4f
+            radius = 10f
+            cardElevation = 2f
             setCardBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.card_light))
         }
 
@@ -401,23 +401,26 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
             orientation = LinearLayout.HORIZONTAL
-            setPadding(24, 16, 16, 16)
+            setPadding(24, 18, 20, 18)
             background = ContextCompat.getDrawable(this@MainActivity, android.R.drawable.menuitem_background)
             isClickable = true
             isFocusable = true
-            minimumHeight = 72
+            minimumHeight = 64
+            gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
-        val iconView = ImageView(this).apply {
+        val docIndicator = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
-                48,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
-//            setImageResource(R.drawable.ic_pdf_main)
-            setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.primary_color))
-            setPadding(0, 0, 16, 0)
+            text = "📄"
+            textSize = 16f
+            setPadding(0, 0, 20, 0)
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
         }
 
         val textView = TextView(this).apply {
@@ -431,24 +434,26 @@ class MainActivity : AppCompatActivity() {
             textSize = 16f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
             maxLines = 1
-            setPadding(0, 0, 0, 50)
             gravity = android.view.Gravity.CENTER_VERTICAL
             typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
 
         val menuIcon = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
             text = "⋮"
-            textSize = 24f
+            textSize = 20f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
-            setPadding(16, 0, 0, 0)
+            setPadding(48, 0, 20, 0)
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
-        linearLayout.addView(iconView)
+        linearLayout.addView(docIndicator)
         linearLayout.addView(textView)
         linearLayout.addView(menuIcon)
         cardView.addView(linearLayout)
