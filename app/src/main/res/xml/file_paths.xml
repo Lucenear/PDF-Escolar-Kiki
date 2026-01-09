@@ -3,4 +3,5 @@
     <cache-path name="cache_pdf" path="pdf_cache/" />
     <external-cache-path name="external_cache_pdf" path="pdf_cache/" />
     <external-path name="external_pdf" path="Download/" />
+    <files-path name="pdf_storage" path="pdf_storage/" />
 </paths>

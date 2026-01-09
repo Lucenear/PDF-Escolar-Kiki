@@ -1,9 +1,9 @@
 import org.gradle.api.JavaVersion
 
-plugins {
-    id("com.android.application")
-    kotlin("android")
-}
+        plugins {
+            id("com.android.application")
+            kotlin("android")
+        }
 
 android {
     namespace = "com.kikipdf"
@@ -13,8 +13,30 @@ android {
         applicationId = "com.kikipdf"
         minSdk = 28
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.1.0"
+        versionCode = 15
+        versionName = "2.4.0"
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+
+
+        }
+        debug {
+            isMinifyEnabled = false
+        }
     }
 
     buildFeatures {
@@ -35,9 +57,11 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("com.github.mhiew:android-pdf-viewer:3.2.0-beta.1")
-    implementation("com.google.android.material:material:1.13.0")
 
+    implementation("com.github.chrisbanes:PhotoView:2.3.0")
+
+    implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.activity:activity-ktx:1.8.0")
     implementation("androidx.fragment:fragment-ktx:1.6.1")
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
 }

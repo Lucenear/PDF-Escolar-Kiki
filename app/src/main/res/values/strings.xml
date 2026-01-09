@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PDF Escolar Kiki</string>
+    <string name="app_subtitle">Tu visor de PDF simple y rápido</string>
+    
+    <!-- Main Screen -->
+    <string name="open_pdf">Abrir PDF</string>
+    <string name="select_file_hint">Toca para seleccionar un archivo</string>
+    <string name="recent_files">Archivos recientes</string>
+    <string name="search_hint">Buscar entre tus archivos recientes...</string>
+    <string name="clear_button">Limpiar</string>
+    <string name="no_recent_files">No hay archivos recientes\nToca \'Abrir PDF\' para comenzar</string>
+    
+    <!-- Menu Options -->
+    <string name="menu_share">Compartir</string>
+    <string name="menu_download">Descargar</string>
+    <string name="menu_night_mode">Modo Noche</string>
+    <string name="menu_jump_to_page">Ir a página</string>
+    <string name="menu_delete">Eliminar de recientes</string>
+    <string name="options">Opciones</string>
+    
+    <!-- Dialogs -->
+    <string name="clear_cache_title">Limpiar Historial</string>
+    <string name="clear_cache_message">¿Estás seguro de que deseas eliminar todos los archivos temporales y el historial de archivos recientes?\n\nEsta acción no se puede deshacer.</string>
+    <string name="accept">Aceptar</string>
+    <string name="cancel">Cancelar</string>
+    
+    <string name="error_opening_pdf">Error al abrir PDF</string>
+    <string name="error_message_template">%1$s\n\nAsegúrate de que:\n• El archivo no esté corrupto\n• Tengas permisos para acceder al archivo</string>
+    
+    <string name="jump_to_page_title">Ir a página</string>
+    <string name="jump_to_page_hint">Número de página (1-%1$d)</string>
+    <string name="go_button">Ir</string>
+    <string name="menu_copy_text">Extraer Todo (OCR)</string>
+    <string name="extracting_text">Extrayendo texto...</string>
+    <string name="text_copied">Texto copiado al portapapeles</string>
+    <string name="no_text_found">No se encontró texto en esta página</string>
+    <string name="copy_text_title">Texto Extraído</string>
+    <string name="copy_button">Copiar</string>
+    <string name="invalid_page_number">Número de página inválido</string>
+    
+    <!-- Toast Messages -->
+    <string name="pdf_saved_in_downloads">PDF guardado en: Descargas/%1$s</string>
+    <string name="error_file_access">Error: No se pudo acceder al archivo</string>
+    <string name="error_insufficient_permissions">Error: Permisos insuficientes</string>
+    <string name="error_downloading">Error al descargar: %1$s</string>
+    <string name="cache_cleared_with_stats">Historial limpiado: %1$d archivos (%2$s MB)</string>
+    <string name="cache_cleared">Historial limpiado correctamente</string>
+    <string name="error_clearing_cache">Error al limpiar el historial</string>
+    <string name="file_removed_from_recent">Archivo eliminado de recientes</string>
+    <string name="error_sharing_file">Error al compartir el archivo</string>
+    <string name="no_apps_to_share">No hay aplicaciones disponibles para compartir</string>
+    <string name="error_sharing">Error al compartir: %1$s</string>
+    <string name="could_not_access_file">No se pudo acceder al archivo para compartir</string>
+    <string name="could_not_open_file">No se pudo abrir el archivo</string>
+    <string name="press_again_to_exit">Presiona de nuevo para salir</string>
+    
+    <!-- Sharing -->
+    <string name="sharing_pdf_subject">Compartiendo PDF: %1$s</string>
+    <string name="sharing_pdf_text">Te comparto este archivo PDF</string>
+    <string name="sharing_pdf_text_named">Te comparto este archivo PDF: %1$s</string>
+    <string name="share_pdf_via">Compartir PDF via</string>
+    
+    <!-- Permissions -->
+    <string name="permission_required_title">Permiso Requerido</string>
+    <string name="storage_permission_required">Esta aplicación necesita acceso al almacenamiento para abrir y guardar archivos PDF.</string>
+    <string name="permission_denied">Permiso denegado. No se pueden abrir archivos PDF sin este permiso.</string>
+    <string name="open_settings">Ir a Configuración</string>
+    
+    <!-- File operations -->
+    <string name="default_filename">documento.pdf</string>
+</resources>

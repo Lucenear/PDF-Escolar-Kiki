@@ -3,15 +3,15 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
-        android:id="@+id/menu_share"
-        android:icon="@drawable/ic_share"
-        android:title="Compartir"
+        android:id="@+id/menu_download"
+        android:icon="@drawable/ic_download"
+        android:title="@string/menu_download"
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/menu_download"
-        android:icon="@drawable/ic_download"
-        android:title="Descargar"
+        android:id="@+id/menu_jump_to_page"
+        android:icon="@drawable/ic_page_jump"
+        android:title="@string/menu_jump_to_page"
         app:showAsAction="never" />
 
 </menu>

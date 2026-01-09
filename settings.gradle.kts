@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Simple PDF"
+rootProject.name = "PDF Escolar Kiki"
 include(":app")
  

@@ -1,15 +1,19 @@
 package com.kikipdf
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.database.Cursor
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
@@ -23,39 +27,115 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
+import com.github.chrisbanes.photoview.PhotoView
 import androidx.core.content.FileProvider
-import com.github.barteksc.pdfviewer.PDFView
 import org.json.JSONArray
 import org.json.JSONException
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.SeekBar
+import org.json.JSONObject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
+import android.content.Context 
+
+
+
+
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var pdfView: PDFView
+    companion object {
+        private const val MAX_FILE_SIZE_MB = 100
+        private const val MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024L
+
+
+    }
+
+    private lateinit var pdfRecyclerView: RecyclerView
+    private var pdfRenderer: PdfRenderer? = null
+    private var fileDescriptor: ParcelFileDescriptor? = null
     private lateinit var homeScreen: View
     private lateinit var recentFilesContainer: LinearLayout
     private lateinit var txtNoRecentFiles: TextView
     private lateinit var btnMenu: ImageButton
-    private lateinit var btnClearCache: Button
-    private lateinit var sharedPreferences: SharedPreferences
+    private lateinit var btnToggleNightMode: ImageButton
+    private lateinit var btnSharePdf: ImageButton
+    private lateinit var btnClearCache: ImageButton
+
 
     private var currentPdfUri: Uri? = null
     private var currentPdfFile: File? = null
-    private val RECENT_FILES_KEY = "recent_files"
-    private val MAX_RECENT_FILES = 10
-    private val CACHE_CLEANUP_THRESHOLD = TimeUnit.DAYS.toMillis(1)
+    private var currentOriginalUri: Uri? = null
+    private val repository by lazy { RecentFilesRepository(this) }
+    private var allRecentFiles: List<RecentFile> = emptyList()
+
 
     private var wasViewingPdf = false
     private var pdfUriBeforeRecreate: Uri? = null
+    private var isNightMode = false
+    
+
+    
+
+    
+
+
+
+    private lateinit var fastScrollerContainer: android.widget.RelativeLayout
+    private lateinit var fastScrollerKnob: android.widget.LinearLayout
+    private lateinit var scrollerHandle: CardView
+    private lateinit var pageIndicatorBubble: CardView
+    private lateinit var pdfPageIndicator: TextView
+    
+    private val thumbnailsDir: File by lazy {
+        File(filesDir, "thumbnails").apply {
+            if (!exists()) mkdirs()
+        }
+    }
 
     private var backPressedTime: Long = 0
+
+    private val hideControlsHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val hideControlsRunnable = Runnable {
+        if (::fastScrollerContainer.isInitialized) {
+            fastScrollerContainer.animate()
+                .alpha(0f)
+                .setDuration(300)
+                .withEndAction { fastScrollerContainer.visibility = View.GONE }
+                .start()
+        }
+    }
+
+    private val pdfStorageDir: File by lazy {
+        File(filesDir, "pdf_storage").apply {
+            if (!exists()) mkdirs()
+        }
+    }
 
     private val pdfCacheDir: File by lazy {
         File(cacheDir, "pdf_cache").apply {
             if (!exists()) mkdirs()
+        }
+    }
+
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted) {
+            openFilePicker()
+        } else {
+            showPermissionDeniedDialog()
         }
     }
 
@@ -68,7 +148,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        sharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
+
 
         applySystemTheme()
 
@@ -84,7 +164,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        cleanOldCache()
+        FileUtils.cleanOldCache(this, pdfStorageDir, pdfCacheDir)
         initViews()
         setupMaterialIcons()
         setupHomeScreen()
@@ -102,23 +182,163 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        if (pdfView.visibility == View.VISIBLE && currentPdfUri != null) {
+        if (::pdfRecyclerView.isInitialized && pdfRecyclerView.visibility == View.VISIBLE && currentPdfUri != null) {
             outState.putString("saved_pdf_uri", currentPdfUri.toString())
             outState.putBoolean("was_viewing_pdf", true)
         }
     }
 
     private fun initViews() {
-        pdfView = findViewById(R.id.pdfView)
+        pdfRecyclerView = findViewById(R.id.pdfRecyclerView)
+        pdfRecyclerView.layoutManager = LinearLayoutManager(this)
         homeScreen = findViewById(R.id.homeScreen)
         recentFilesContainer = findViewById(R.id.recentFilesContainer)
         txtNoRecentFiles = findViewById(R.id.txtNoRecentFiles)
         btnMenu = findViewById(R.id.btn_menu)
         btnClearCache = findViewById(R.id.btn_clear_cache)
+        
+        btnToggleNightMode = findViewById(R.id.btnToggleNightMode)
+        btnToggleNightMode.setOnClickListener { toggleNightMode() }
+        
+        btnSharePdf = findViewById(R.id.btnSharePdf)
+        btnSharePdf.setOnClickListener { sharePdf() }
+        
+        fastScrollerContainer = findViewById(R.id.fastScrollerContainer)
+        fastScrollerKnob = findViewById(R.id.fastScrollerKnob)
+        scrollerHandle = findViewById(R.id.scrollerHandle)
+        pageIndicatorBubble = findViewById(R.id.pageIndicatorBubble)
+        pdfPageIndicator = findViewById(R.id.pdfPageIndicator)
+        
+        setupNavigationListeners()
     }
 
     private fun setupMaterialIcons() {
         setupMenuIcon()
+    }
+    
+    private fun setupNavigationListeners() {
+        scrollerHandle.setOnTouchListener { view, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    hideControlsHandler.removeCallbacks(hideControlsRunnable)
+                    view.parent.requestDisallowInterceptTouchEvent(true)
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val containerHeight = fastScrollerContainer.height
+                    val knobHeight = fastScrollerKnob.height
+                    
+                    val location = IntArray(2)
+                    fastScrollerContainer.getLocationOnScreen(location)
+                    val handleCenterOffset = view.height / 2
+                    
+                    var newY = event.rawY - location[1] - handleCenterOffset
+
+                    newY = newY.coerceIn(0f, (containerHeight - knobHeight).toFloat())
+                    fastScrollerKnob.y = newY
+                    
+
+                    val scrollRange = pdfRecyclerView.computeVerticalScrollRange() - pdfRecyclerView.height
+                    val handleRange = containerHeight - knobHeight
+                    
+                    if (handleRange > 0 && scrollRange > 0) {
+                        val percentage = newY / handleRange
+                        val targetScroll = (percentage * scrollRange).toInt()
+                         
+                         val adapter = pdfRecyclerView.adapter
+                         if (adapter != null && adapter.itemCount > 0) {
+                             val targetPos = (percentage * (adapter.itemCount - 1)).toInt()
+                             (pdfRecyclerView.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(targetPos, 0)
+                             updatePageIndicator(targetPos, adapter.itemCount)
+                         }
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    hideControlsHandler.postDelayed(hideControlsRunnable, 2000)
+                    view.parent.requestDisallowInterceptTouchEvent(false)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        pdfRecyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                super.onScrolled(recyclerView, dx, dy)
+                if (scrollerHandle.isPressed) return
+                
+                showControls()
+                
+
+                val offset = recyclerView.computeVerticalScrollOffset()
+                val range = recyclerView.computeVerticalScrollRange() - recyclerView.height
+                val containerHeight = fastScrollerContainer.height
+                val knobHeight = fastScrollerKnob.height
+                
+                if (range > 0 && (containerHeight - knobHeight) > 0) {
+                    val percentage = offset.toFloat() / range
+                    val newY = percentage * (containerHeight - knobHeight)
+                    fastScrollerKnob.y = newY
+                }
+
+                val layoutManager = recyclerView.layoutManager as LinearLayoutManager
+                var firstPos = layoutManager.findFirstVisibleItemPosition()
+                val lastPos = layoutManager.findLastVisibleItemPosition()
+                
+                if (firstPos != RecyclerView.NO_POSITION) {
+                    val firstView = layoutManager.findViewByPosition(firstPos)
+                    if (firstView != null) {
+                        val visibleHeight = firstView.bottom - recyclerView.paddingTop
+                        if (visibleHeight < recyclerView.height * 0.5) {
+                            firstPos++
+                        }
+                    }
+
+                    val pageCount = pdfRenderer?.pageCount ?: 0
+                    if (pageCount > 0) updatePageIndicatorRange(firstPos, lastPos, pageCount)
+                }
+            }
+            
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                super.onScrollStateChanged(recyclerView, newState)
+                if (scrollerHandle.isPressed) {
+                    hideControlsHandler.removeCallbacks(hideControlsRunnable)
+                    return
+                }
+                
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    hideControlsHandler.postDelayed(hideControlsRunnable, 2000)
+                } else {
+                    hideControlsHandler.removeCallbacks(hideControlsRunnable)
+                }
+            }
+        })
+    }
+    
+    private fun showControls() {
+        if (fastScrollerContainer.visibility != View.VISIBLE) {
+            fastScrollerContainer.visibility = View.VISIBLE
+            fastScrollerContainer.alpha = 0f
+            fastScrollerContainer.animate()
+                .alpha(1f)
+                .setDuration(200)
+                .start()
+        }
+        hideControlsHandler.removeCallbacks(hideControlsRunnable)
+        hideControlsHandler.postDelayed(hideControlsRunnable, 3000)
+    }
+
+    private fun updatePageIndicator(position: Int, total: Int) {
+        updatePageIndicatorRange(position, position, total)
+    }
+    
+    private fun updatePageIndicatorRange(first: Int, last: Int, total: Int) {
+        if (first == last) {
+             pdfPageIndicator.text = "${first + 1} de $total"
+        } else {
+             pdfPageIndicator.text = "${first + 1} a ${last + 1} de $total"
+        }
     }
 
     private fun setupMenuIcon() {
@@ -135,15 +355,15 @@ class MainActivity : AppCompatActivity() {
     private fun showPdfOptionsMenu() {
         val popup = PopupMenu(this, btnMenu)
         popup.menuInflater.inflate(R.menu.pdf_options_menu, popup.menu)
-
+        
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                R.id.menu_share -> {
-                    sharePdf()
-                    true
-                }
                 R.id.menu_download -> {
                     downloadPdf()
+                    true
+                }
+                R.id.menu_jump_to_page -> {
+                    showJumpToPageDialog()
                     true
                 }
                 else -> false
@@ -160,46 +380,64 @@ class MainActivity : AppCompatActivity() {
 
     private fun downloadPdf() {
         try {
-            val sourceFile = currentPdfFile ?: getCachedFileFromUri(currentPdfUri)
+            val sourceFile = currentPdfFile ?: FileUtils.getCachedFileFromUri(this, currentPdfUri, pdfStorageDir, pdfCacheDir)
 
             if (sourceFile != null && sourceFile.exists()) {
-                val fileName = getFileName(currentPdfUri)
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val fileName = FileUtils.getFileName(this, currentPdfUri)
 
-                if (!downloadsDir.exists()) {
-                    downloadsDir.mkdirs()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val contentValues = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    }
+
+                    val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+
+                    if (uri != null) {
+                        contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            java.io.FileInputStream(sourceFile).use { inputStream ->
+                                inputStream.copyTo(outputStream)
+                            }
+                        }
+                        Toast.makeText(this, getString(R.string.pdf_saved_in_downloads, fileName), Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this, R.string.error_downloading, Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    if (!downloadsDir.exists()) {
+                        downloadsDir.mkdirs()
+                    }
+                    val outputFile = File(downloadsDir, fileName)
+                    sourceFile.copyTo(outputFile, overwrite = true)
+
+                    MediaScannerConnection.scanFile(
+                        this,
+                        arrayOf(outputFile.absolutePath),
+                        arrayOf("application/pdf"),
+                        null
+                    )
+                    Toast.makeText(this, getString(R.string.pdf_saved_in_downloads, fileName), Toast.LENGTH_LONG).show()
                 }
-
-                val outputFile = File(downloadsDir, fileName)
-
-                sourceFile.copyTo(outputFile, overwrite = true)
-
-                MediaScannerConnection.scanFile(
-                    this,
-                    arrayOf(outputFile.absolutePath),
-                    arrayOf("application/pdf"),
-                    null
-                )
-
-                Toast.makeText(this, "PDF guardado en: Descargas/$fileName", Toast.LENGTH_LONG).show()
             } else {
-                Toast.makeText(this, "Error: No se pudo acceder al archivo", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.error_file_access, Toast.LENGTH_SHORT).show()
             }
         } catch (e: SecurityException) {
-            Toast.makeText(this, "Error: Permisos insuficientes", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.error_insufficient_permissions, Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Toast.makeText(this, "Error al descargar: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.error_downloading, e.message ?: "Unknown"), Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun showClearCacheConfirmation() {
         AlertDialog.Builder(this)
-            .setTitle("Limpiar Historial")
-            .setMessage("¿Estás seguro de que deseas eliminar todos los archivos temporales y el historial de archivos recientes?\n\nEsta acción no se puede deshacer.")
-            .setPositiveButton("Aceptar") { _, _ ->
+            .setTitle(R.string.clear_cache_title)
+            .setMessage(R.string.clear_cache_message)
+            .setPositiveButton(R.string.accept) { _, _ ->
                 clearCacheAndRecentFiles()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -208,12 +446,30 @@ class MainActivity : AppCompatActivity() {
             var deletedFiles = 0
             var totalSize = 0L
 
+            if (pdfStorageDir.exists() && pdfStorageDir.isDirectory) {
+                pdfStorageDir.listFiles()?.forEach { file ->
+                    totalSize += file.length()
+                    if (file.delete()) {
+                        deletedFiles++
+                    }
+                }
+            }
+
             if (pdfCacheDir.exists() && pdfCacheDir.isDirectory) {
                 pdfCacheDir.listFiles()?.forEach { file ->
                     totalSize += file.length()
                     if (file.delete()) {
                         deletedFiles++
                     }
+                }
+            }
+
+            if (thumbnailsDir.exists() && thumbnailsDir.isDirectory) {
+                thumbnailsDir.listFiles()?.forEach { file ->
+                     totalSize += file.length()
+                     if (file.delete()) {
+                         deletedFiles++
+                     }
                 }
             }
 
@@ -229,52 +485,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            sharedPreferences.edit().remove(RECENT_FILES_KEY).apply()
+            repository.clearAllData()
 
             val sizeMB = String.format("%.2f", totalSize / (1024.0 * 1024.0))
-            val message = if (deletedFiles > 0) {
-                "Historial limpiado: $deletedFiles archivos ($sizeMB MB)"
-            } else {
-                "Historial limpiado correctamente"
-            }
-
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             loadRecentFiles()
-
         } catch (e: Exception) {
-            Toast.makeText(this, "Error al limpiar el historial", Toast.LENGTH_SHORT).show()
+
         }
     }
 
-    private fun cleanOldCache() {
-        try {
-            val now = System.currentTimeMillis()
 
-            if (pdfCacheDir.exists() && pdfCacheDir.isDirectory) {
-                pdfCacheDir.listFiles()?.forEach { file ->
-                    if (now - file.lastModified() > CACHE_CLEANUP_THRESHOLD) {
-                        file.delete()
-                    }
-                }
-            }
-
-            val cacheDir = cacheDir
-            if (cacheDir.exists() && cacheDir.isDirectory) {
-                cacheDir.listFiles()?.forEach { file ->
-                    if (file.name.startsWith("pdf_cache_") && file.extension == "pdf") {
-                        if (now - file.lastModified() > CACHE_CLEANUP_THRESHOLD) {
-                            file.delete()
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-        }
-    }
 
     private fun sharePdf() {
         try {
-            val fileToShare = currentPdfFile ?: getCachedFileFromUri(currentPdfUri)
+            val fileToShare = currentPdfFile ?: FileUtils.getCachedFileFromUri(this, currentPdfUri, pdfStorageDir, pdfCacheDir)
 
             if (fileToShare != null && fileToShare.exists()) {
                 val contentUri = FileProvider.getUriForFile(
@@ -287,7 +511,7 @@ class MainActivity : AppCompatActivity() {
                     type = "application/pdf"
                     putExtra(Intent.EXTRA_STREAM, contentUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    putExtra(Intent.EXTRA_SUBJECT, "Compartiendo PDF: ${getFileName(currentPdfUri)}")
+                    putExtra(Intent.EXTRA_SUBJECT, "Compartiendo PDF: ${FileUtils.getFileName(this@MainActivity, currentPdfUri)}")
                     putExtra(Intent.EXTRA_TEXT, "Te comparto este archivo PDF")
                 }
 
@@ -300,27 +524,14 @@ class MainActivity : AppCompatActivity() {
 
                 startActivity(chooserIntent)
             } else {
-                Toast.makeText(this, "No se pudo acceder al archivo para compartir", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.could_not_access_file, Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Error al compartir: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.error_sharing, e.message ?: "Unknown"), Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun getCachedFileFromUri(uri: Uri?): File? {
-        if (uri == null) return null
 
-        return try {
-            if (uri.scheme == "file") {
-                File(uri.path!!)
-            } else {
-                val fileName = getFileName(uri)
-                File(pdfCacheDir, fileName)
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
 
     private fun applySystemTheme() {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
@@ -331,180 +542,189 @@ class MainActivity : AppCompatActivity() {
             openFilePicker()
         }
         setupMenuButton()
+        
+
+        
+        val searchView = findViewById<androidx.appcompat.widget.SearchView>(R.id.searchView)
+        searchView.setOnQueryTextListener(object : androidx.appcompat.widget.SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean = false
+            override fun onQueryTextChange(newText: String?): Boolean {
+                filterRecentFiles(newText ?: "")
+                return true
+            }
+        })
+        
         loadRecentFiles()
     }
 
     private fun loadRecentFiles() {
-        val recentFiles = getRecentFiles()
+        allRecentFiles = repository.getRecentFiles()
+        filterRecentFiles("")
+    }
+    
+    private fun filterRecentFiles(query: String) {
+        val filteredList = if (query.isEmpty()) {
+            allRecentFiles
+        } else {
+            allRecentFiles.filter { it.name.contains(query, ignoreCase = true) }
+        }
+        
+        val sortedList = filteredList.sortedWith(compareByDescending<RecentFile> { it.isFavorite }.thenByDescending { it.timestamp })
+        
         recentFilesContainer.removeAllViews()
 
-        if (recentFiles.isEmpty()) {
+        if (sortedList.isEmpty()) {
             txtNoRecentFiles.visibility = View.VISIBLE
+            txtNoRecentFiles.text = if(query.isEmpty()) getString(R.string.no_recent_files) else "No se encontraron resultados"
         } else {
             txtNoRecentFiles.visibility = View.GONE
-            for (fileData in recentFiles) {
-                val uri = Uri.parse(fileData.first)
-                val fileName = fileData.second
-                addRecentFileToView(uri, fileName)
+            for (file in sortedList) {
+                addRecentFileToView(file)
             }
         }
     }
 
-    private fun addRecentFileToView(uri: Uri, fileName: String) {
+    private fun addRecentFileToView(file: RecentFile) {
+        val uri = Uri.parse(file.uri)
+
+        
         val cardView = CardView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT, 
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 12)
-            }
-            radius = 10f
-            cardElevation = 2f
+            ).apply { setMargins(0, 0, 0, 16) }
+            radius = 24f
+            cardElevation = 4f
             setCardBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.card_light))
         }
 
-        val linearLayout = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+        val container = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(24, 18, 20, 18)
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(16, 16, 16, 16)
             background = ContextCompat.getDrawable(this@MainActivity, android.R.drawable.menuitem_background)
             isClickable = true
             isFocusable = true
-            minimumHeight = 64
-            gravity = android.view.Gravity.CENTER_VERTICAL
+            
+            setOnClickListener { 
+                openPdfFromRecentFile(uri, file.name) 
+            }
+            
+
         }
 
-        val docIndicator = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = android.view.Gravity.CENTER_VERTICAL
-            }
-            text = "📄"
-            textSize = 16f
-            setPadding(0, 0, 20, 0)
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
-        }
+        val thumbnail = android.widget.ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(120, 160)
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            setImageResource(R.drawable.ic_pdf_file)
+            
+            CoroutineScope(Dispatchers.Main).launch {
+                var thumb = getThumbnail(uri)
+                if (thumb == null) {
 
-        val textView = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                weight = 1f
+                    withContext(Dispatchers.IO) {
+                        generateThumbnailSynchronous(uri)
+                    }
+                    thumb = getThumbnail(uri)
+                }
+                
+                if (thumb != null) setImageBitmap(thumb)
             }
-            text = fileName
+        }
+        
+        val infoLayout = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 0, 16, 0)
+        }
+        
+        val titleView = TextView(this).apply {
+            text = file.name
             textSize = 16f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
-            maxLines = 1
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        
+        infoLayout.addView(titleView)
+
+        val starBtn = ImageButton(this).apply {
+            layoutParams = LinearLayout.LayoutParams(96, 96)
+            background = null
+            setImageResource(if (file.isFavorite) R.drawable.ic_star_filled else R.drawable.ic_star_outline)
+            setOnClickListener { toggleFavorite(file) }
+
+
         }
 
-        val menuIcon = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = android.view.Gravity.CENTER_VERTICAL
-            }
-            text = "⋮"
-            textSize = 20f
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
-            setPadding(48, 0, 20, 0)
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-
-        linearLayout.addView(docIndicator)
-        linearLayout.addView(textView)
-        linearLayout.addView(menuIcon)
-        cardView.addView(linearLayout)
-
-        linearLayout.setOnClickListener {
-            openPdfFromUri(uri)
-        }
-
-        linearLayout.setOnLongClickListener {
-            showFileContextMenu(linearLayout, uri, fileName)
-            true
-        }
-
-        menuIcon.setOnClickListener {
-            showFileContextMenu(linearLayout, uri, fileName)
-        }
-
+        container.addView(thumbnail)
+        container.addView(infoLayout)
+        container.addView(starBtn)
+        
+        cardView.addView(container)
         recentFilesContainer.addView(cardView)
     }
 
-    private fun showFileContextMenu(view: View, uri: Uri, fileName: String) {
-        val popup = PopupMenu(this, view)
-        popup.menuInflater.inflate(R.menu.file_context_menu, popup.menu)
 
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.menu_delete -> {
-                    removeFromRecentFiles(uri)
-                    true
-                }
-                R.id.menu_share -> {
-                    shareSpecificPdf(uri, fileName)
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
+    
+
+    
+
+    
+
+    
+
+
+
+
+        
+
+
+
+    
+    private fun toggleFavorite(file: RecentFile) {
+        repository.toggleFavorite(file)
+        loadRecentFiles()
     }
 
+    private fun addToRecentFiles(storedUri: Uri, originalUri: Uri, fileName: String? = null) {
+        val displayName = fileName ?: FileUtils.getFileName(this, originalUri)
+        repository.addRecentFile(storedUri, displayName, originalUri)
+        generateThumbnail(storedUri)
+        loadRecentFiles() // Refresh UI
+    }
+
+    
     private fun removeFromRecentFiles(uri: Uri) {
-        val recentFiles = getRecentFiles().toMutableList()
-        val removed = recentFiles.removeAll { it.first == uri.toString() }
-
-        if (removed) {
-            saveRecentFiles(recentFiles)
-            loadRecentFiles()
-            Toast.makeText(this, "Archivo eliminado de recientes", Toast.LENGTH_SHORT).show()
-        }
+        repository.removeRecentFile(uri.toString())
+        loadRecentFiles()
+        
+        Toast.makeText(this, R.string.file_removed_from_recent, Toast.LENGTH_SHORT).show()
     }
 
-    private fun shareSpecificPdf(uri: Uri, fileName: String) {
-        try {
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/pdf"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                putExtra(Intent.EXTRA_SUBJECT, "Compartiendo PDF: $fileName")
-                putExtra(Intent.EXTRA_TEXT, "Te comparto este archivo PDF: $fileName")
-            }
 
-            val chooserIntent = Intent.createChooser(shareIntent, "Compartir PDF via")
-            if (shareIntent.resolveActivity(packageManager) != null) {
-                startActivity(chooserIntent)
-            } else {
-                Toast.makeText(this, "No hay aplicaciones disponibles para compartir", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error al compartir el archivo", Toast.LENGTH_SHORT).show()
-        }
-    }
 
     private fun showPdfView() {
         homeScreen.visibility = View.GONE
-        pdfView.visibility = View.VISIBLE
+        pdfRecyclerView.visibility = View.VISIBLE
+        btnToggleNightMode.visibility = View.VISIBLE
+        btnSharePdf.visibility = View.VISIBLE
         btnMenu.visibility = View.VISIBLE
+        fastScrollerContainer.visibility = View.VISIBLE
     }
 
     private fun showHomeScreen() {
         runOnUiThread {
             homeScreen.visibility = View.VISIBLE
-            pdfView.visibility = View.GONE
+            pdfRecyclerView.visibility = View.GONE
             btnMenu.visibility = View.GONE
+            btnToggleNightMode.visibility = View.GONE
+            btnSharePdf.visibility = View.GONE
+            fastScrollerContainer.visibility = View.GONE
+
+            closeRenderer()
+
             currentPdfUri = null
             currentPdfFile = null
             loadRecentFiles()
@@ -539,6 +759,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openFilePicker() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/pdf"
+                }
+                filePickerLauncher.launch(intent)
+            } else {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) 
+                    == PackageManager.PERMISSION_GRANTED) {
+                    launchFilePicker()
+                } else {
+                    permissionLauncher.launch(arrayOf(
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ))
+                }
+            }
+        } else {
+            launchFilePicker()
+        }
+    }
+
+    private fun launchFilePicker() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/pdf"
@@ -546,18 +790,122 @@ class MainActivity : AppCompatActivity() {
         filePickerLauncher.launch(intent)
     }
 
-    private fun openPdfFromUri(uri: Uri) {
+    private fun showPermissionDeniedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.permission_required_title)
+            .setMessage(R.string.storage_permission_required)
+            .setPositiveButton(R.string.open_settings) { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+                startActivity(intent)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun openPdfFromRecentFile(uri: Uri, fileName: String) {
         try {
-            val cachedFile = copyToCache(uri)
-            currentPdfFile = cachedFile
-            currentPdfUri = Uri.fromFile(cachedFile)
+            val storedFile = File(pdfStorageDir, fileName)
+            
+            if (storedFile.exists()) {
+                currentPdfFile = storedFile
+                currentPdfUri = Uri.fromFile(storedFile)
+                currentOriginalUri = getOriginalUri(uri)
+                
+                if (currentOriginalUri != null) {
+                    addToRecentFiles(currentPdfUri!!, currentOriginalUri!!, fileName)
+                }
+
+                loadPdfFromUri(currentPdfUri!!)
+                showPdfView()
+            } else {
+                val originalUri = getOriginalUri(uri)
+                if (originalUri != null) {
+                    Toast.makeText(this, "Reabriendo archivo...", Toast.LENGTH_SHORT).show()
+                    openPdfFromUri(originalUri, false)
+                } else {
+                    showFileNotAvailableDialog(uri, fileName)
+                }
+            }
+        } catch (e: Exception) {
+            showFileNotAvailableDialog(uri, fileName)
+        }
+    }
+
+    private fun showFileNotAvailableDialog(uri: Uri, fileName: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Archivo no disponible")
+            .setMessage("El archivo \"$fileName\" ya no está disponible.\n\n¿Deseas eliminarlo de archivos recientes?")
+            .setPositiveButton("Eliminar") { _, _ ->
+                removeFromRecentFiles(uri)
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun openPdfFromUri(uri: Uri, isReopen: Boolean = false) {
+        try {
+            val fileSize = getFileSize(uri)
+            if (fileSize > MAX_FILE_SIZE_BYTES) {
+                val sizeMB = fileSize / (1024 * 1024)
+                showPdfErrorDialog("El archivo es demasiado grande ($sizeMB MB). El tamaño máximo soportado es $MAX_FILE_SIZE_MB MB.")
+                return
+            }
+
+            val persistentFile = copyToPersistentStorage(uri)
+            currentPdfFile = persistentFile
+            currentPdfUri = Uri.fromFile(persistentFile)
+            currentOriginalUri = uri
 
             loadPdfFromUri(currentPdfUri!!)
             showPdfView()
-            addToRecentFiles(currentPdfUri!!, getFileName(uri))
+            
+            if (!isReopen) {
+                addToRecentFiles(currentPdfUri!!, uri, FileUtils.getFileName(this, uri))
+            }
 
         } catch (e: Exception) {
-            showPdfErrorDialog("No se pudo abrir el archivo: ${e.message ?: "Error desconocido"}")
+            showPdfErrorDialog(getString(R.string.could_not_open_file) + ": ${e.message ?: "Error desconocido"}")
+        }
+    }
+
+    private fun getFileSize(uri: Uri): Long {
+        return try {
+            contentResolver.openInputStream(uri)?.use { stream ->
+                stream.available().toLong()
+            } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun copyToPersistentStorage(uri: Uri): File {
+        var inputStream: InputStream? = null
+        var outputStream: FileOutputStream? = null
+
+        try {
+            inputStream = contentResolver.openInputStream(uri)
+            if (inputStream == null) {
+                throw Exception("No se pudo abrir el stream del archivo")
+            }
+
+            val fileName = FileUtils.getFileName(this@MainActivity, uri)
+            val outputFile = File(pdfStorageDir, fileName)
+
+            if (outputFile.exists()) {
+                return outputFile
+            }
+
+            outputStream = FileOutputStream(outputFile)
+            inputStream.copyTo(outputStream)
+            return outputFile
+
+        } catch (e: Exception) {
+            throw e
+        } finally {
+            inputStream?.close()
+            outputStream?.close()
         }
     }
 
@@ -571,7 +919,7 @@ class MainActivity : AppCompatActivity() {
                 throw Exception("No se pudo abrir el stream del archivo")
             }
 
-            val fileName = getFileName(uri)
+            val fileName = FileUtils.getFileName(this@MainActivity, uri)
             val outputFile = File(pdfCacheDir, fileName)
 
             if (outputFile.exists()) {
@@ -593,122 +941,185 @@ class MainActivity : AppCompatActivity() {
     private fun showPdfErrorDialog(message: String) {
         runOnUiThread {
             AlertDialog.Builder(this)
-                .setTitle("Error al abrir PDF")
-                .setMessage("$message\n\nAsegúrate de que:\n• El archivo no esté corrupto\n• Tengas permisos para acceder al archivo")
-                .setPositiveButton("Aceptar", null)
+                .setTitle(R.string.error_opening_pdf)
+                .setMessage(getString(R.string.error_message_template, message))
+                .setPositiveButton(R.string.accept, null)
                 .show()
 
-            Toast.makeText(this, "No se pudo abrir el archivo", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.could_not_open_file, Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun addToRecentFiles(uri: Uri, fileName: String? = null) {
-        val recentFiles = getRecentFiles().toMutableList()
-        recentFiles.removeAll { it.first == uri.toString() }
-        val displayName = fileName ?: getFileName(uri)
-        recentFiles.add(0, Pair(uri.toString(), displayName))
 
-        if (recentFiles.size > MAX_RECENT_FILES) {
-            recentFiles.removeAt(recentFiles.size - 1)
-        }
-        saveRecentFiles(recentFiles)
+
+    private fun getOriginalUri(storedUri: Uri): Uri? {
+        return repository.getOriginalUri(storedUri)
     }
 
-    private fun getFileName(uri: Uri?): String {
-        if (uri == null) return "documento.pdf"
-
-        var result = "documento.pdf"
-
-        if (uri.scheme == "file") {
-            val file = File(uri.path!!)
-            result = file.name
-        } else {
-            var cursor: Cursor? = null
+    private fun generateThumbnail(uri: Uri) {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
-                cursor = contentResolver.query(uri, null, null, null, null)
-                cursor?.let {
-                    if (it.moveToFirst()) {
-                        val displayNameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (displayNameIndex >= 0) {
-                            result = it.getString(displayNameIndex) ?: "documento.pdf"
-                        }
+                val file = FileUtils.getCachedFileFromUri(this@MainActivity, uri, pdfStorageDir, pdfCacheDir) ?: return@launch
+                val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                val renderer = PdfRenderer(pfd)
+                
+                if (renderer.pageCount > 0) {
+                    val page = renderer.openPage(0)
+                    val width = 300
+                    val height = (width * 1.414).toInt()
+                    
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    page.close()
+                    
+
+                    val thumbName = "thumb_${file.name}.png"
+                    val thumbFile = File(thumbnailsDir, thumbName)
+                    FileOutputStream(thumbFile).use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
                     }
                 }
+                renderer.close()
+                pfd.close()
             } catch (e: Exception) {
-                result = uri.lastPathSegment ?: "documento.pdf"
-            } finally {
-                cursor?.close()
+
             }
         }
-
-        if (!result.endsWith(".pdf", ignoreCase = true)) {
-            result += ".pdf"
-        }
-
-        if (result.length > 30) {
-            val nameWithoutExt = result.substringBeforeLast(".")
-            val extension = result.substringAfterLast(".")
-            result = nameWithoutExt.take(27) + "...$extension"
-        }
-
-        return result
     }
-
-    private fun getRecentFiles(): List<Pair<String, String>> {
-        val jsonString = sharedPreferences.getString(RECENT_FILES_KEY, "[]") ?: "[]"
-        return try {
-            val jsonArray = JSONArray(jsonString)
-            val files = mutableListOf<Pair<String, String>>()
-            for (i in 0 until jsonArray.length()) {
-                val fileArray = jsonArray.getJSONArray(i)
-                files.add(Pair(fileArray.getString(0), fileArray.getString(1)))
-            }
-            files
-        } catch (e: JSONException) {
-            emptyList()
-        }
-    }
-
-    private fun saveRecentFiles(files: List<Pair<String, String>>) {
+    private fun generateThumbnailSynchronous(uri: Uri) {
         try {
-            val jsonArray = JSONArray()
-            for (file in files) {
-                val fileArray = JSONArray()
-                fileArray.put(file.first)
-                fileArray.put(file.second)
-                jsonArray.put(fileArray)
+            val file = FileUtils.getCachedFileFromUri(this, uri, pdfStorageDir, pdfCacheDir) ?: return
+            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(pfd)
+            
+            if (renderer.pageCount > 0) {
+                val page = renderer.openPage(0)
+                val width = 300
+                val height = (width * 1.414).toInt()
+                
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close()
+                
+
+                val thumbName = "thumb_${file.name}.png"
+                val thumbFile = File(thumbnailsDir, thumbName)
+                FileOutputStream(thumbFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
+                }
             }
-            sharedPreferences.edit().putString(RECENT_FILES_KEY, jsonArray.toString()).apply()
+            renderer.close()
+            pfd.close()
         } catch (e: Exception) {
+
+        }
+    }
+    private suspend fun getThumbnail(uri: Uri): Bitmap? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val fileName = FileUtils.getFileName(this@MainActivity, uri)
+                val thumbName = "thumb_$fileName.png"
+                val thumbFile = File(thumbnailsDir, thumbName)
+                
+                if (thumbFile.exists()) {
+                     android.graphics.BitmapFactory.decodeFile(thumbFile.absolutePath)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 
     private fun loadPdfFromUri(uri: Uri) {
         try {
+            closeRenderer()
+
+            val file = FileUtils.getCachedFileFromUri(this, uri, pdfStorageDir, pdfCacheDir) ?: return
+            fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            pdfRenderer = PdfRenderer(fileDescriptor!!)
+
+            pdfRecyclerView.adapter = PdfAdapter(pdfRenderer!!, isNightMode)
+
             currentPdfUri = uri
-            pdfView.fromUri(uri)
-                .enableSwipe(true)
-                .swipeHorizontal(false)
-                .enableDoubletap(true)
-                .onError { t ->
-                    throw Exception("Error en PDFView: ${t?.message}")
-                }
-                .load()
+            showPdfView()
+            
+            updatePageIndicator(0, pdfRenderer!!.pageCount)
         } catch (e: Exception) {
-            throw e
+            showPdfErrorDialog("Error al mostrar PDF: ${e.message}")
         }
+    }
+
+    private fun closeRenderer() {
+        try {
+            pdfRenderer?.close()
+            fileDescriptor?.close()
+        } catch (e: Exception) {}
+    }
+
+
+
+
+
+
+    private fun toggleNightMode() {
+        val layoutManager = pdfRecyclerView.layoutManager as LinearLayoutManager
+        val currentPosition = layoutManager.findFirstVisibleItemPosition()
+
+        isNightMode = !isNightMode
+        btnToggleNightMode.setImageResource(if (isNightMode) R.drawable.ic_day else R.drawable.ic_night)
+        
+        if (currentPdfUri != null) {
+
+             if (pdfRenderer != null) {
+                pdfRecyclerView.adapter = PdfAdapter(pdfRenderer!!, isNightMode)
+                
+                if (currentPosition != RecyclerView.NO_POSITION) {
+                    pdfRecyclerView.scrollToPosition(currentPosition)
+                    updatePageIndicator(currentPosition, pdfRenderer!!.pageCount)
+                }
+             }
+        }
+    }
+
+    private fun showJumpToPageDialog() {
+        val pageCount = pdfRenderer?.pageCount ?: 0
+        if (pageCount == 0) return
+
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = "1 - $pageCount"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.jump_to_page_title)
+            .setView(input)
+            .setPositiveButton(R.string.go_button) { _, _ ->
+                val pageStr = input.text.toString()
+                if (pageStr.isNotEmpty()) {
+                    val page = pageStr.toInt() - 1
+                    if (page in 0 until pageCount) {
+                        pdfRecyclerView.scrollToPosition(page)
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun setupBackPressedHandler() {
         val onBackPressedCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (pdfView.visibility == View.VISIBLE) {
+                if (::pdfRecyclerView.isInitialized && pdfRecyclerView.visibility == View.VISIBLE) {
                     showHomeScreen()
                 } else {
                     if (backPressedTime + 2000 > System.currentTimeMillis()) {
                         finish()
                     } else {
-                        Toast.makeText(this@MainActivity, "Presiona de nuevo para salir", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, R.string.press_again_to_exit, Toast.LENGTH_SHORT).show()
                         backPressedTime = System.currentTimeMillis()
                     }
                 }
@@ -719,5 +1130,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        closeRenderer()
     }
 }
