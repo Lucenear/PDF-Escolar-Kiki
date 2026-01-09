@@ -27,7 +27,7 @@ class RecentFilesRepository(context: Context) {
             for (i in 0 until jsonArray.length()) {
                 val item = jsonArray.get(i)
                 if (item is JSONArray) {
-                     // Legacy format handling if needed, though we prefer object
+
                     files.add(RecentFile(item.getString(0), item.getString(1)))
                 } else if (item is JSONObject) {
                     files.add(RecentFile(
@@ -38,8 +38,7 @@ class RecentFilesRepository(context: Context) {
                     ))
                 }
             }
-            // Sort by favorite (desc) then timestamp (desc)
-            // files.sortByDescending { it.timestamp } // Usually redundant if list is ordered, but good practice
+            files.sortByDescending { it.isFavorite }
             allRecentFiles = files
             files
         } catch (e: JSONException) {
@@ -70,9 +69,7 @@ class RecentFilesRepository(context: Context) {
         val storedUriString = uri.toString()
         val existingIndex = currentFiles.indexOfFirst { it.uri == storedUriString }
 
-        // If we have an original URI, use its name if name is null
-        // But here we act purely on what is passed. 
-        // Logic from MainActivity: get name, create obj.
+
 
         val newFile = RecentFile(
             uri = storedUriString,
@@ -131,7 +128,7 @@ class RecentFilesRepository(context: Context) {
         allRecentFiles = emptyList()
     }
 
-    // Original URI mapping
+
     fun saveOriginalUri(storedUri: Uri, originalUri: Uri) {
         try {
             val originalUris = getOriginalUrisMap().toMutableMap()

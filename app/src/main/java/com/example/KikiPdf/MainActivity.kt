@@ -692,7 +692,7 @@ class MainActivity : AppCompatActivity() {
         val displayName = fileName ?: FileUtils.getFileName(this, originalUri)
         repository.addRecentFile(storedUri, displayName, originalUri)
         generateThumbnail(storedUri)
-        loadRecentFiles() // Refresh UI
+        loadRecentFiles()
     }
 
     
